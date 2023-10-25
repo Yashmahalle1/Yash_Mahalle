@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-1">
+        <createTable tableName="booking">
+            <column autoIncrement="true" name="id" type="bigint">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="bookingPK"/>
+            </column>
+            <column name="version" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="end_time" type="datetime">
+                <constraints nullable="false"/>
+            </column>
+            <column name="parking_slot_id" type="bigint"/>
+            <column name="start_time" type="datetime">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(9)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="vehicle_category" type="varchar(11)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="vehicle_plate_number" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-2">
+        <createTable tableName="booking_extension">
+            <column autoIncrement="true" name="id" type="bigint">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="booking_extenPK"/>
+            </column>
+            <column name="version" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="booking_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="extended_end_time" type="datetime">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-3">
+        <createTable tableName="parking_slot">
+            <column autoIncrement="true" name="id" type="bigint">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="parking_slotPK"/>
+            </column>
+            <column name="version" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="slot_available" type="bit">
+                <constraints nullable="false"/>
+            </column>
+            <column name="slot_category" type="varchar(11)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="slot_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="slot_status" type="varchar(17)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="type_of_slot" type="varchar(12)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-4">
+        <createTable tableName="user">
+            <column autoIncrement="true" name="id" type="bigint">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="userPK"/>
+            </column>
+            <column name="version" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="gender" type="varchar(255)"/>
+            <column name="last_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="password" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="phone_country_code" type="varchar(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="phone_number" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="token" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-5">
+        <addForeignKeyConstraint baseColumnNames="parking_slot_id" baseTableName="booking" constraintName="FK3DB085974781BB8" deferrable="false" initiallyDeferred="false" referencedColumnNames="id" referencedTableName="parking_slot" referencesUniqueColumn="false"/>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-6">
+        <addForeignKeyConstraint baseColumnNames="user_id" baseTableName="booking" constraintName="FK3DB0859E617260D" deferrable="false" initiallyDeferred="false" referencedColumnNames="id" referencedTableName="user" referencesUniqueColumn="false"/>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-7">
+        <addForeignKeyConstraint baseColumnNames="booking_id" baseTableName="booking_extension" constraintName="FK99F143D927CB4A07" deferrable="false" initiallyDeferred="false" referencedColumnNames="id" referencedTableName="booking" referencesUniqueColumn="false"/>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-8">
+        <createIndex indexName="FK3DB085974781BB8" tableName="booking">
+            <column name="parking_slot_id"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-9">
+        <createIndex indexName="FK3DB0859E617260D" tableName="booking">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-10">
+        <createIndex indexName="FK99F143D927CB4A07" tableName="booking_extension">
+            <column name="booking_id"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-11">
+        <createIndex indexName="unique-booking_id" tableName="booking_extension">
+            <column name="extended_end_time"/>
+            <column name="booking_id"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="Yash Mahalle (generated)" id="1698142627934-12">
+        <createIndex indexName="user_name_unique_1698142627870" tableName="user" unique="true">
+            <column name="user_name"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

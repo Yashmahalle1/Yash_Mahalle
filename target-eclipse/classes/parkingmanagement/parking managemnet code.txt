@@ -1,0 +1,1351 @@
+package parkingmanagement
+
+class Booking {
+	
+	User user
+	ParkingSlot parkingSlot
+	Date startTime
+	Date endTime
+	String status
+	String vehicleCategory
+	String vehiclePlateNumber 
+	
+
+    static constraints = {
+		
+		user nullable: false
+		parkingSlot nullable: true
+		startTime nullable: false
+		endTime nullable: false
+		status inList: ["Pending", "Confirmed", "Cancelled"]
+		vehicleCategory inList: ["twoWheeler", "fourWheeler"]
+		vehiclePlateNumber size: 1..20
+    }
+}
+-----------------------------------------------------------------------------------------------
+package parkingmanagement
+
+class BookingExtension {
+	
+	Booking booking
+	Date extendedEndTime
+
+    static constraints = {
+		
+		booking unique: 'extendedEndTime'
+		
+    }
+}
+
+------------------------------------------------------------------------------------------------
+package parkingmanagement
+
+class ParkingSlot {
+	
+	String slotName
+	String slotCategory
+	boolean slotAvailable
+	String typeOfSlot
+	String slotStatus
+
+	
+    static constraints = {
+		slotName blank: false, nullable: false
+        slotCategory(inList: ["twoWheeler", "fourWheeler"])
+        slotAvailable(nullable: false)
+        typeOfSlot(inList: ["Ground Floor", "Ramp"])
+		slotStatus(inList: ["In Use", "Under Maintenance"])
+    }
+}
+-------------------------------------------------------------------------------------------------
+package parkingmanagement
+
+class User {
+
+	String userName
+	String password
+	String token
+	String phoneCountryCode
+	String phoneNumber
+	String firstName
+	String lastName
+	String status = "1" // Default status is "1" (active)
+    static constraints = {
+		userName unique: true, size: 3..255
+        password size: 6..255
+        phoneCountryCode size: 1..10
+        phoneNumber size: 1..20
+        firstName size: 2..255
+        lastName size: 2..255
+		
+    }
+	
+	boolean isPasswordValid(String rawPassword) {
+        return password == rawPassword
+    }
+
+}
+---------------------------------------------------------------------------------------------
+package parkingmanagement
+
+import grails.converters.JSON
+import java.text.SimpleDateFormat
+
+class BookingController {
+	
+	// Inject the service
+	def bookingService
+
+	// Define an action for the 1st step of booking
+	def step1() {
+		try {
+			// Parse the request JSON
+			def requestJson = request.JSON
+
+			// Call the service method to handle step 1 of booking
+			def result = bookingService.processStep1Booking(requestJson)
+
+			if (result.status == 'success') {
+				// Booking step 1 was successful, construct a success response
+				def responseBody = [
+					status: 'success',
+					message: 'Booking step 1 successful.',
+					data: result.data
+				]
+
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Booking step 1 failed, construct an error response with details
+				def responseBody = [
+					status: 'error',
+					message: 'Booking step 1 failed.',
+					errors: result.errors
+				]
+
+				render status: 400, contentType: 'application/json', text: responseBody as JSON
+			}
+		} catch (Exception e) {
+			// Handle any unhandled exceptions that occurred during booking step 1
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Booking step 1 failed.',
+					errors: ['An error occurred during booking step 1.']
+				] as JSON
+		}
+	}
+
+	def step2() {
+    try {
+        // Parse the request JSON
+        def requestJson = request.JSON
+
+        // Retrieve step 1 data by bookingId
+        def step1Booking = bookingService.retrieveStep1BookingData(requestJson.bookingId)
+
+        if (!step1Booking) {
+            log.error("Step 1 booking data not found for the provided booking ID.")
+            render status: 400, contentType: 'application/json',
+                text: [
+                    status: 'error',
+                    message: 'Step 1 booking data not found for the provided booking ID.'
+                ] as JSON
+            return
+        }
+
+        log.info("LF Step 1 Booking Data: $step1Booking")
+
+		if (step1Booking.status == "Cancelled") {
+			// Check if the booking is already cancelled
+			render status: 400, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'This booking has been cancelled and no further action is allowed.'
+				] as JSON
+			return
+		}
+		
+        if (requestJson.isComing == false) {
+            // User has indicated that they are not coming, so cancel the booking
+            step1Booking.status = "Cancelled"
+            step1Booking.save(flush: true)
+
+            render status: 200, contentType: 'application/json',
+                text: [
+                    status: 'success',
+                    message: 'Booking has been cancelled.'
+                ] as JSON
+        } else {
+            // Calculate the time difference in minutes
+            def currentTime = new Date()
+            long timeDifferenceMinutes = (step1Booking.startTime.time - currentTime.time) / (60 * 1000)
+
+            if (timeDifferenceMinutes <= 150) {
+                // Determine the parking slot allocation based on the user's category
+                def allocatedSlot = bookingService.allocateParkingSlot(step1Booking)
+
+                if (allocatedSlot) {
+                    render status: 200, contentType: 'application/json',
+                        text: [
+                            status: 'success',
+                            message: 'Booking step 2: Slot allocated.',
+                            data: allocatedSlot.slotName
+                        ] as JSON
+                } else {
+                    render status: 500, contentType: 'application/json',
+                        text: [
+                            status: 'error',
+                            message: 'Failed to allocate a parking slot.'
+                        ] as JSON
+                }
+            } else {
+                render status: 400, contentType: 'application/json',
+                    text: [
+                        status: 'error',
+                        message: 'You can only confirm coming 15 minutes or less before the start time.'
+                    ] as JSON
+            }
+        }
+    } catch (Exception e) {
+        log.error("An error occurred during step 2 of the booking process: ${e.message}", e)
+        render status: 500, contentType: 'application/json',
+            text: [
+                status: 'error',
+                message: 'An error occurred during step 2 of the booking process.',
+                errors: [e.message]
+            ] as JSON
+    }
+}
+
+
+	
+	
+	
+	def extendEndTime() {
+		try {
+			def requestJson = request.JSON
+	
+			// Retrieve the booking by booking id
+			def bookingId = requestJson.bookingId
+			def booking = Booking.get(bookingId)
+	
+			if (!booking) {
+				render status: 400, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'Booking not found for the provided booking ID.'
+					] as JSON
+				return
+			}
+	
+			if (booking.status != "Confirmed") {
+				render status: 400, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'Booking status is not "Confirmed". Cannot extend the endTime.'
+					] as JSON
+				return
+			}
+	
+			// Parse the requested endTime String to a Date
+			def requestedEndTimeString = requestJson.endTime
+			def requestedEndTime = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").parse(requestedEndTimeString)
+	
+			// Check if the endTime can be extended (within 10 minutes or less of the current endTime)
+			def canExtend = bookingService.canExtendEndTime(booking, requestedEndTime)
+	
+			if (canExtend) {
+				// Check if the booking has already been extended
+				def bookingExtension = BookingExtension.findByBooking(booking)
+				if (bookingExtension) {
+					render status: 400, contentType: 'application/json',
+						text: [
+							status: 'error',
+							message: 'Booking endTime can only be extended once.'
+						] as JSON
+					return
+				}
+	
+				// Check if the requested endTime is after the current endTime
+				if (requestedEndTime.before(booking.endTime)) {
+					render status: 400, contentType: 'application/json',
+						text: [
+							status: 'error',
+							message: 'Requested endTime cannot be before the current endTime.'
+						] as JSON
+					return
+				}
+	
+				// Update the endTime and create a new booking extension entry
+				booking.endTime = requestedEndTime
+				def extension = new BookingExtension(booking: booking, extendedEndTime: requestedEndTime)
+				if (booking.save(flush: true) && extension.save(flush: true)) {
+					render status: 200, contentType: 'application/json',
+						text: [
+							status: 'success',
+							message: 'Booking endTime extended successfully.'
+						] as JSON
+				} else {
+					render status: 500, contentType: 'application/json',
+						text: [
+							status: 'error',
+							message: 'Failed to extend the booking endTime.',
+							errors: booking.errors
+						] as JSON
+				}
+			} else {
+				render status: 400, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'Cannot extend the endTime. Make sure the request is within 10 minutes of the current endTime.'
+					] as JSON
+			}
+		} catch (Exception e) {
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'An error occurred during the endTime extension process.',
+					errors: [e.message]
+				] as JSON
+		}
+	}
+	
+	
+
+	// List all bookings
+	def bookingList() {
+		try {
+			// Retrieve all bookings
+			def bookings = Booking.list()
+
+			// Construct a response with the list of bookings
+			def responseBody = [
+				status: 'success',
+				message: 'List of all bookings',
+				data: bookings
+			]
+
+			render status: 200, contentType: 'application/json', text: responseBody as JSON
+		} catch (Exception e) {
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'An error occurred while retrieving the list of bookings.',
+					errors: [e.message]
+				] as JSON
+		}
+	}
+
+	// Show details of a specific booking
+	def showBooking(Long id) {
+		try {
+			// Retrieve the booking from the database by ID
+			def booking = Booking.get(id)
+
+			if (booking) {
+				// Construct the success response
+				def responseBody = [
+					status: 'success',
+					message: 'Booking retrieved successfully.',
+					data: [
+						bookingId: booking.id,
+						user: booking.user,
+						parkingSlot: booking.parkingSlot,
+						startTime: booking.startTime,
+						endTime: booking.endTime,
+						status: booking.status,
+						vehicleCategory: booking.vehicleCategory,
+						vehiclePlateNumber: booking.vehiclePlateNumber,
+					]
+				]
+
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Booking not found
+				render status: 404, contentType: 'application/json',
+					text: [
+						status: 'error',
+						code: 'booking_not_found',
+						message: "The booking with ID ${id} was not found.",
+						details: "The requested booking does not exist in the system."
+					] as JSON
+			}
+		} catch (Exception e) {
+			// Handle any exceptions here and return an error response
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Failed to retrieve booking.',
+					errors: ['An error occurred while fetching booking data.']
+				] as JSON
+		}
+	}
+
+	// Delete a specific booking by its ID
+	def deleteBooking(Long id) {
+		try {
+			// Retrieve the booking from the database by ID
+			def booking = Booking.get(id)
+
+			if (booking) {
+				// Delete the booking
+				booking.delete(flush: true)
+
+				// Construct a success response
+				def responseBody = [
+					status: 'success',
+					message: "Booking with ID ${id} has been deleted.",
+				]
+
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Booking not found
+				render status: 404, contentType: 'application/json',
+					text: [
+						status: 'error',
+						code: 'booking_not_found',
+						message: "The booking with ID ${id} was not found.",
+						details: "The requested booking does not exist in the system."
+					] as JSON
+			}
+		} catch (Exception e) {
+			// Handle any exceptions and return an error response
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Failed to delete the booking.',
+					errors: ['An error occurred while deleting the booking.']
+				] as JSON
+		}
+	}
+}
+----------------------------------------------------------------------------------------------------
+package parkingmanagement
+
+import grails.converters.JSON
+
+
+class ParkingSlotController {
+	
+	// Inject the service
+	def parkingSlotService
+
+	// Create a new parking slot
+	def create() {
+		try {
+			// Parse the request JSON
+			def requestJson = request.JSON
+
+			// Call the service to create the parking slot
+			def parkingSlot = parkingSlotService.createParkingSlot(requestJson)
+
+			if (parkingSlot) {
+				def responseBody = [
+					status: 'success',
+					message: 'Parking slot created successfully.',
+					data: parkingSlot
+				]
+				render status: 201, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				def responseBody = [
+					status: 'error',
+					message: 'Parking slot creation failed.',
+					errors: 'Invalid data or slot already exists.'
+				]
+				render status: 400, contentType: 'application/json', text: responseBody as JSON
+			}
+		} catch (Exception e) {
+			def responseBody = [
+				status: 'error',
+				message: 'Parking slot creation failed.',
+				errors: [e.message]
+			]
+			render status: 500, contentType: 'application/json', text: responseBody as JSON
+		}
+	}
+
+	// List all parking slots
+	def listParkingSlots() {
+		try {
+			// Retrieve a list of parking slots from the database
+			def parkingSlots = ParkingSlot.list()
+
+			// Create a list to hold parking slot details
+			def parkingSlotDetails = []
+
+			// Iterate through the parking slots and extract their details
+			parkingSlots.each { parkingSlot ->
+				def parkingSlotDetail = [
+					slotId: parkingSlot.id,
+					slotName: parkingSlot.slotName,
+					slotCategory: parkingSlot.slotCategory,
+					slotAvailable: parkingSlot.slotAvailable,
+					typeOfSlot: parkingSlot.typeOfSlot,
+					slotStatus: parkingSlot.slotStatus
+				]
+				parkingSlotDetails << parkingSlotDetail
+			}
+
+			// Construct the success response
+			def responseBody = [
+				status: 'success',
+				message: 'Parking slot list retrieved successfully.',
+				data: parkingSlotDetails
+			]
+
+			render status: 200, contentType: 'application/json', text: responseBody as JSON
+		} catch (Exception e) {
+			// Handle any exceptions here and return an error response
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Failed to retrieve parking slot list.',
+					errors: ['An error occurred while fetching parking slot data.']
+				] as JSON
+		}
+	}
+
+	// Show details of a specific parking slot
+	def showParkingSlot(Long id) {
+		try {
+			// Retrieve the parking slot from the database by ID
+			def parkingSlot = ParkingSlot.get(id)
+
+			if (parkingSlot) {
+				// Construct the success response
+				def responseBody = [
+					status: 'success',
+					message: 'Parking slot retrieved successfully.',
+					data: [
+						slotId: parkingSlot.id,
+						slotName: parkingSlot.slotName,
+						slotCategory: parkingSlot.slotCategory,
+						slotAvailable: parkingSlot.slotAvailable,
+						typeOfSlot: parkingSlot.typeOfSlot,
+						slotStatus: parkingSlot.slotStatus,
+					]
+				]
+
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Parking slot not found
+				render status: 404, contentType: 'application/json',
+					text: [
+						status: 'error',
+						code: 'parking_slot_not_found',
+						message: "The parking slot with ID ${slotId} was not found.",
+						details: "The requested parking slot does not exist in the system."
+					] as JSON
+			}
+		} catch (Exception e) {
+			// Handle any exceptions here and return an error response
+			render status: 500, contentType: 'application.json',
+				text: [
+					status: 'error',
+					message: 'Failed to retrieve parking slot.',
+					errors: ['An error occurred while fetching parking slot data.']
+				] as JSON
+		}
+	}
+
+	// Delete a specific parking slot by its ID
+	def deleteParkingSlot(Long id) {
+		try {
+			// Retrieve the parking slot by ID
+			def parkingSlot = ParkingSlot.get(id)
+
+			if (parkingSlot) {
+				// Delete the parking slot from the database with flushing
+				parkingSlot.delete(flush: true)
+
+				// Create a success response body
+				def responseBody = [
+					status: 'success',
+					message: 'Parking slot deleted successfully.',
+					data: [
+						slotName: parkingSlot.slotName,
+						slotCategory: parkingSlot.slotCategory,
+						typeOfSlot: parkingSlot.typeOfSlot,
+					]
+				]
+
+				// Respond with a 200 OK status and JSON content type
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Parking slot not found
+				def responseBody = [
+					status: 'error',
+					message: "Parking slot with ID $id not found."
+				]
+
+				// Respond with a 404 Not Found status and JSON content type
+				render status: 404, contentType: 'application/json', text: responseBody as JSON
+			}
+		} catch (Exception e) {
+			// Handle any exceptions here and return an error response
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Parking slot deletion failed.',
+					errors: ['An error occurred during deletion.']
+				] as JSON
+		}
+	}
+
+	// Update parking slot status
+	def updateParkingSlot(Long id) {
+		try {
+			// Parse the request JSON
+			def requestJson = request.JSON
+
+			def result = parkingSlotService.updateParkingSlot(id, requestJson)
+
+			if (result.status == "success") {
+				// Parking slot status updated successfully
+				def responseBody = [
+					status: 'success',
+					message: 'Parking slot status updated successfully.',
+					data: result.data
+				]
+
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} else {
+				// Parking slot status update failed
+				def responseBody = [
+					status: 'error',
+					message: result.message,
+					errors: result.errors
+				]
+
+				render status: 400, contentType: 'application/json', text: responseBody as JSON
+			}
+		} catch (Exception e) {
+			// Handle any exceptions here and return an error response
+			render status: 500, contentType: 'application/json',
+				text: [
+					status: 'error',
+					message: 'Parking slot status update failed.',
+					errors: ['An error occurred during update.']
+				] as JSON
+		}
+	}
+}
+
+--------------------------------------------------------------------------------------------
+
+package parkingmanagement
+
+import grails.converters.JSON
+import parkingmanagement.UserService
+
+class UserController {
+	
+	UserService userService
+	
+		// User registration
+		def register() {
+			try {
+				// Parse the incoming JSON data from the HTTP request
+				def requestJson = request.JSON
+	
+				// Call the service method to handle user registration
+				def result = userService.registerUser(requestJson)
+	
+				if (result.status == 'success') {
+					// Registration was successful, construct a success response
+					def responseBody = [
+						status: 'success',
+						message: 'User registered successfully.',
+						data: result.data
+					]
+	
+					render status: 201, contentType: 'application/json', text: responseBody as JSON
+				} else {
+					// Registration failed, construct an error response with details
+					def responseBody = [
+						status: 'error',
+						message: 'User registration failed.',
+						errors: result.errors
+					]
+	
+					render status: 400, contentType: 'application/json', text: responseBody as JSON
+				}
+			} catch (Exception e) {
+				// Handle any unhandled exceptions that occurred during registration
+				render status: 500, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'User registration failed.',
+						errors: ['An error occurred during registration.']
+					] as JSON
+			}
+		}
+	
+		// User login
+		def login() {
+			try {
+				// Parse the request JSON
+				def requestJson = request.JSON
+				def username = requestJson.userName
+				def password = requestJson.password
+	
+				// Authenticate the user
+				def user = userService.authenticateUser(username, password)
+	
+				if (user) {
+					// Generate a token for the authenticated user
+					def token = userService.generateTokenForUser(user)
+	
+					// Prepare the response body
+					def responseBody = [
+						status: 'success',
+						message: 'User authenticated successfully.',
+						data: [
+							userId: user.id,
+							userName: user.userName,
+							token: token
+						]
+					]
+	
+					// Respond with a success status (200) and JSON
+					render status: 200, contentType: 'application/json', text: responseBody as JSON
+				} else {
+					// User authentication failed
+					def responseBody = [
+						status: 'error',
+						message: 'Authentication failed. Invalid username or password.'
+					]
+	
+					// Respond with an error status (401) and JSON
+					render status: 401, contentType: 'application/json', text: responseBody as JSON
+				}
+			} catch (Exception e) {
+				// Handle exceptions
+				def responseBody = [
+					status: 'error',
+					message: 'Authentication failed.',
+					errors: [e.message]
+				]
+	
+				// Respond with an error status (500) and JSON
+				render status: 500, contentType: 'application/json', text: responseBody as JSON
+			}
+		}
+	
+		// List all users
+		def listUsers() {
+			try {
+				// Retrieve a list of users from the database (you may need to customize this query)
+				def users = User.list()
+	
+				// Create a list to hold user details
+				def userDetails = []
+	
+				// Iterate through the users and extract their details
+				users.each { user ->
+					def userDetail = [
+						userId: user.id,
+						userName: user.userName,
+						firstName: user.firstName,
+						lastName: user.lastName,
+						phoneCountryCode: user.phoneCountryCode,
+						phoneNumber: user.phoneNumber
+					]
+					userDetails << userDetail
+				}
+	
+				// Construct the success response
+				def responseBody = [
+					status: 'success',
+					message: 'User list retrieved successfully.',
+					data: userDetails
+				]
+	
+				render status: 200, contentType: 'application/json', text: responseBody as JSON
+			} catch (Exception e) {
+				// Handle any exceptions here and return an error response
+				render status: 500, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'Failed to retrieve user list.',
+						errors: ['An error occurred while fetching user data.']
+					] as JSON
+			}
+		}
+	
+		// Show a specific user by ID
+		def showUser(Long userId) {
+			try {
+				// Retrieve the user from the database by ID
+				def user = User.get(userId)
+	
+				if (user) {
+					// Construct the success response
+					def responseBody = [
+						status: 'success',
+						message: 'User retrieved successfully.',
+						data: [
+							userId: user.id,
+							userName: user.userName,
+							firstName: user.firstName,
+							lastName: user.lastName,
+							phoneCountryCode: user.phoneCountryCode,
+							phoneNumber: user.phoneNumber,
+						]
+					]
+	
+					render status: 200, contentType: 'application/json', text: responseBody as JSON
+				} else {
+					// User not found
+					render status: 404, contentType: 'application/json',
+						text: [
+							status: 'error',
+							code: 'user_not_found',
+							message: "The user with ID ${userId} was not found.",
+							details: "The requested user does not exist in the system."
+						] as JSON
+				}
+			} catch (Exception e) {
+				// Handle any exceptions here and return an error response
+				render status: 500, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'Failed to retrieve user.',
+						errors: ['An error occurred while fetching user data.']
+					] as JSON
+			}
+		}
+	
+		// Update user information
+		def updateUser(Long userId) {
+			try {
+				// Parse the request JSON
+				def requestJson = request.JSON
+	
+				def result = userService.updateUser(userId, requestJson)
+	
+				if (result.status == "success") {
+					// User updated successfully
+					def responseBody = [
+						status: 'success',
+						message: 'User updated successfully',
+						data: result.data
+					]
+	
+					render status: 200, contentType: 'application/json', text: responseBody as JSON
+				} else {
+					// User update failed
+					def responseBody = [
+						status: 'error',
+						message: result.message,
+						errors: result.errors
+					]
+	
+					render status: 400, contentType: 'application/json', text: responseBody as JSON
+				}
+			} catch (Exception e) {
+				// Handle any exceptions here and return an error response
+				render status: 500, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'User update failed',
+						errors: ['An error occurred during update']
+					] as JSON
+			}
+		}
+	
+		// Delete user by ID
+		def deleteUser(Long userId) {
+			try {
+				// Attempt to retrieve the user with the specified userId
+				def user = User.get(userId)
+				if (user) {
+					// If the user exists, delete it from the database with flushing
+					user.delete(flush: true)
+	
+					// Create a success response body
+					def responseBody = [
+						status: 'success',
+						message: 'User deleted successfully',
+						data: user
+					]
+					// Respond with a 200 OK status and JSON content type
+					render status: 200, contentType: 'application/json', text: responseBody as JSON
+				} else {
+					// If the user does not exist, create an error response
+					def responseBody = [
+						status: 'error',
+						message: "User with ID $userId not found"
+					]
+					// Respond with a 404 Not Found status and JSON content type
+					render status: 404, contentType: 'application/json', text: responseBody as JSON
+				}
+			} catch (Exception e) {
+				// Catch any exceptions that occur during the process
+				render status: 500, contentType: 'application/json',
+					text: [
+						status: 'error',
+						message: 'User deletion failed',
+						errors: ['An error occurred during deletion']
+					] as JSON
+			}
+		}
+}
+
+----------------------------------------------------------------------------------------------------------------------
+package parkingmanagement
+
+import java.text.SimpleDateFormat
+import java.util.TimeZone
+
+
+class BookingService {
+	
+	
+	
+	def processStep1Booking(Map<String, Object> bookingData) {
+    try {
+        // Extract the data from the request
+        def slotCategory = bookingData.slotCategory
+        def startTimeString = bookingData.startTime // Get the startTime as a string
+        def endTimeString = bookingData.endTime // Get the endTime as a string
+        def vehiclePlateNumber = bookingData.vehiclePlateNumber
+        def userId = bookingData.userId
+
+        def sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        sdf.timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+        Date startTime = sdf.parse(startTimeString)
+        Date endTime = sdf.parse(endTimeString)
+
+        // Ensure that startTime is after the current time
+        Date currentTime = new Date()
+        if (startTime.before(currentTime)) {
+            return [status: 'error', message: 'Booking step 1 failed.', errors: 'Start time cannot be before the current time.']
+        }
+		
+		// Ensure that endTime is after the startTime
+		if (endTime.before(startTime)) {
+			return [status: 'error', message: 'Booking step 1 failed.', errors: 'End time cannot be before the start time.']
+		}
+
+        // Determine the vehicle category based on slotCategory
+        def vehicleCategory = determineVehicleCategory(slotCategory)
+
+		// Vehicle category is determined, proceed to the next steps
+        if (vehicleCategory) {
+
+            // Create a Booking instance with the determined data
+            def booking = new Booking(
+                user: User.get(userId),
+                parkingSlot: null, // will assign the parking slot in the next step
+                startTime: startTime,
+                endTime: endTime,
+                status: 'Pending',
+                vehicleCategory: vehicleCategory,
+                vehiclePlateNumber: vehiclePlateNumber
+            )
+
+            // Save the booking
+            if (booking.save(flush: true)) {
+                return [status: 'success', message: 'Booking step 1 successful.', data: booking]
+            } else {
+                return [status: 'error', message: 'Booking step 1 failed.', errors: booking.errors]
+            }
+        } else {
+            // Unable to determine the vehicle category, return an error
+            return [status: 'error', "message": 'Unable to determine vehicle category. Booking step 1 failed.']
+        }
+    } catch (Exception e) {
+        System.out.println("exception : " + e.getMessage())
+        return [status: 'error', message: 'Booking step 1 failed.', errors: "An error occurred during booking step 1."]
+    }
+}
+
+
+	def determineVehicleCategory(String slotCategory) {
+		if (slotCategory.equals("twoWheeler")) {
+			return "twoWheeler"
+		} else if (slotCategory.equals("fourWheeler")) {
+			return "fourWheeler"
+		}
+
+		return null // If the vehicle category cannot be determined
+	}
+
+	def retrieveStep1BookingData(Long bookingId) {
+		// Retrieve the most recent booking for the given vehicle plate number
+		return Booking.get(bookingId)
+	}
+
+	def allocateParkingSlot(Booking step1Booking) {
+		// Logic to allocate a parking slot based on step 1 data and availability
+
+		if (step1Booking.vehicleCategory == "twoWheeler") {
+			// Logic for two-wheeler slot allocation (e.g., ground floor)
+			def slot = allocateTwoWheelerSlot(step1Booking)
+		
+			log.info("Two-wheeler parking slot allocated for booking ID: ${step1Booking.id}")
+			return slot
+		} else if (step1Booking.vehicleCategory == "fourWheeler") {
+			// Logic for four-wheeler slot allocation (e.g., ramp or ground floor)
+			def slot = allocateFourWheelerSlot(step1Booking)
+			
+            log.info("New Four-wheeler parking slot allocated for booking ID: ${step1Booking.id}")
+			
+     		return slot
+			 
+		}
+	
+		
+		log.error("No parking slot available for booking ID: ${step1Booking.id}")
+		return null // If no slot available
+	}
+
+	def allocateTwoWheelerSlot(Booking step1Booking) {
+		// If a two-wheeler slot is available on the ground floor, assign it to the booking
+		def availableSlot = ParkingSlot.findBySlotCategoryAndTypeOfSlotAndSlotAvailable("twoWheeler", "Ground Floor", true)
+		if (availableSlot && availableSlot.slotAvailable) {
+			step1Booking.parkingSlot = availableSlot
+			step1Booking.status = "Confirmed"
+			availableSlot.slotAvailable = false // Mark the slot as not available
+			if (step1Booking.save(flush: true) && availableSlot.save(flush: true)) {
+			
+				log.info("Two-wheeler parking slot allocated successfully for booking ID: ${step1Booking.id}")
+				return availableSlot
+			}
+		}
+
+		return null // If no slot available
+	}
+
+	// Implement slot allocation logic for four-wheelers
+	def allocateFourWheelerSlot(Booking step1Booking) {
+		// Check if a ramp slot is available
+		def rampSlot = ParkingSlot.findBySlotCategoryAndTypeOfSlotAndSlotAvailable("fourWheeler", "Ramp", true)
+
+		if (rampSlot && rampSlot.slotAvailable) {
+			log.info "ramp available"
+			// If a ramp slot is available, assign it to the booking
+			step1Booking.parkingSlot = rampSlot
+			step1Booking.status = "Confirmed"
+			rampSlot.slotAvailable = false // Mark the slot as not available
+
+			if (step1Booking.save(flush: true) && rampSlot.save(flush: true)) {
+				
+				log.info("Four-wheeler ramp parking slot allocated successfully for booking ID: ${step1Booking.id}")
+				return rampSlot
+			}
+			else
+			{
+				log.info("else of ramp")
+			}
+		} else {
+		log.info "ramp not available"
+			// If no ramp slot is available, assign a ground floor slot
+			def groundFloorSlot = ParkingSlot.findBySlotCategoryAndTypeOfSlotAndSlotAvailable("fourWheeler", "Ground Floor", true)
+			//log.info("groundFloorSlot : " + groundFloorSlot.properties)
+			if (groundFloorSlot && groundFloorSlot.slotAvailable) {
+				step1Booking.parkingSlot = groundFloorSlot
+				step1Booking.status = "Confirmed"
+				groundFloorSlot.slotAvailable = false // Mark the slot as not available
+
+				if (step1Booking.save(flush: true) && groundFloorSlot.save(flush: true)) {
+				
+					log.info("Four-wheeler ground floor parking slot allocated successfully for booking ID: ${step1Booking.id}")
+					return groundFloorSlot
+				}
+				else
+				{
+					log.info "else of ground int"
+				}
+			}
+			else
+			{
+				log.info "else of ground ext"
+			}
+		}
+
+		return null // If no slot is available
+	}
+
+	
+		def canExtendEndTime(Booking booking, Date requestedEndTime) {
+    // Calculate the time difference in milliseconds between the requested endTime and the current endTime
+    def timeDifferenceMillis = requestedEndTime.time - booking.endTime.time
+
+    // Check if the time difference is less than or equal to 600,000 milliseconds (10 minutes)
+    return timeDifferenceMillis <= 600000
+}
+}
+
+
+____________________________-------------------------------------------------------------------------------------
+
+package parkingmanagement
+
+import grails.converters.JSON
+
+
+class ParkingSlotService {
+
+	// Create a new parking slot
+	def createParkingSlot(Map parkingSlotData) {
+		try {
+			// Check if the slot already exists
+			if (ParkingSlot.findBySlotName(parkingSlotData.slotName)) {
+				return null // Slot with the same name already exists
+			}
+
+			// Create a new parking slot and set its properties
+			def parkingSlot = new ParkingSlot(parkingSlotData)
+
+			// Validate and save the parking slot
+			if (parkingSlot.validate() && parkingSlot.save(flush: true)) {
+				return parkingSlot
+			}
+		} catch (Exception e) {
+			// Handle any exceptions here and log them for debugging
+			e.printStackTrace()
+		}
+		return null // Validation or saving failed
+	}
+	
+	// Update parking slot status
+	def updateParkingSlot(Long id, Map parkingSlotData) {
+		try {
+			def parkingSlot = ParkingSlot.get(id)
+	
+			if (parkingSlot) {
+				// Update the slotStatus if it's present in the request data
+				if (parkingSlotData.slotStatus) {
+					parkingSlot.slotStatus = parkingSlotData.slotStatus
+	
+					
+					// Save the updated parking slot status
+					if (parkingSlot.save(flush: true)) {
+						return [status: "success", message: "Parking slot status updated successfully.", data: parkingSlot]
+					} else {
+						def errors = parkingSlot.errors.allErrors.collect { it.defaultMessage }
+						return [status: "error", message: "Parking slot status update failed.", errors: errors]
+					}
+				} else {
+					return [status: "error", message: "No slotStatus provided in the request."]
+				}
+			} else {
+				return [status: "error", message: "Parking slot not found."]
+			}
+		} catch (Exception e) {
+			return [status: "error", message: "Parking slot status update failed.", errors: ['An error occurred during update.']]
+		}
+	}
+	
+}
+
+--------------------------------------------------------------------------------------------------------------------------------
+package parkingmanagement
+
+
+class UserService {
+	
+	// Register a new user
+	def registerUser(Map<String, String> userData) {
+		// Check if the 'token' field is null in the userData
+		if (userData.token == null) {
+			userData.token = '' // Set token to a default value, e.g., an empty string
+		}
+
+		// Create a new User instance using the provided user data
+		def user = new User(userData)
+
+		if (user.validate()) {
+			// If validation succeeds, attempt to save the user to the database with a flush
+			if (user.save(flush: true)) {
+				// Registration was successful, return a success response
+				return [status: 'success', message: 'User registered successfully.', data: user]
+			} else {
+				// Saving the user to the database failed, return an error response with validation errors
+				return [status: 'error', message: 'User registration failed.', errors: user.errors]
+			}
+		} else {
+			// Validation of user data failed, return an error response with validation errors
+			return [status: 'error', message: 'User registration failed.', errors: user.errors]
+		}
+	}
+
+	// Generate a token for the user
+	def generateTokenForUser(User user) {
+		// Generate a custom token, e.g., a UUID
+		def token = UUID.randomUUID().toString()
+		user.token = token
+		user.save(flush: true)
+		return token
+	}
+
+	// Authenticate a user based on username and password
+	def authenticateUser(String username, String password) {
+		def user = User.findByUserName(username)
+
+		if (user && user.isPasswordValid(password)) {
+			return user
+		}
+
+		return null
+	}
+
+	// Update user information
+	def updateUser(Long userId, Map<String, String> userData) {
+		try {
+			def user = User.get(userId)
+
+			if (user) {
+				// Update user information based on the request data
+				user.properties = userData
+
+				// Save the updated user
+				if (user.save(flush: true)) {
+					return [status: "success", message: "User updated successfully.", data: user]
+				} else {
+					def errors = user.errors.allErrors.collect { it.defaultMessage }
+					return [status: "error", message: "User update failed.", errors: errors]
+				}
+			} else {
+				return [status: "error", message: "User not found."]
+			}
+		} catch (Exception e) {
+			return [status: "error", message: "User update failed.", errors: ['An error occurred during update.']]
+		}
+	}
+
+}
+
+_______-------------------------------------------------------------------------------------
+grails.servlet.version = "2.5" // Change depending on target container compliance (2.5 or 3.0)
+grails.project.class.dir = "target/classes"
+grails.project.test.class.dir = "target/test-classes"
+grails.project.test.reports.dir = "target/test-reports"
+grails.project.target.level = 1.6
+grails.project.source.level = 1.6
+//grails.project.war.file = "target/${appName}-${appVersion}.war"
+
+grails.project.dependency.resolution = {
+    // inherit Grails' default dependencies
+    inherits("global") {
+        // specify dependency exclusions here; for example, uncomment this to disable ehcache:
+        // excludes 'ehcache'
+    }
+    log "error" // log level of Ivy resolver, either 'error', 'warn', 'info', 'debug' or 'verbose'
+    checksums true // Whether to verify checksums on resolve
+
+    repositories {
+        inherits true // Whether to inherit repository definitions from plugins
+
+        grailsPlugins()
+        grailsHome()
+        grailsCentral()
+
+        mavenLocal()
+        mavenCentral()
+		
+
+        // uncomment these (or add new ones) to enable remote dependency resolution from public Maven repositories
+        //mavenRepo "http://snapshots.repository.codehaus.org"
+        //mavenRepo "http://repository.codehaus.org"
+        //mavenRepo "http://download.java.net/maven/2/"
+        //mavenRepo "http://repository.jboss.com/maven2/"
+    }
+    dependencies {
+        // specify dependencies here under either 'build', 'compile', 'runtime', 'test' or 'provided' scopes eg.
+
+        // runtime 'mysql:mysql-connector-java:5.1.20'
+		runtime 'mysql:mysql-connector-java:5.1.20'
+		//compile "org.grails.plugins:quartz:2.0.13"
+
+		
+    }
+
+    plugins {
+        runtime ":hibernate:$grailsVersion"
+        runtime ":jquery:1.7.2"
+        runtime ":resources:1.1.6"
+  
+		
+		
+
+        // Uncomment these (or add new ones) to enable additional resources capabilities
+        //runtime ":zipped-resources:1.0"
+        //runtime ":cached-resources:1.0"
+        //runtime ":yui-minify-resources:0.1.4"
+
+        build ":tomcat:$grailsVersion"
+
+        runtime ":database-migration:1.1"
+
+        compile ':cache:1.0.0'
+    }
+}
+
+------------------------------------------------------------------------------------------------------------------------
+class UrlMappings {
+
+	static mappings = {
+		
+		"/api/users/register"(controller: "user", action: "register", method: "POST") {
+		}
+
+		"/api/users"(controller: "user", action: "listUsers", method: "GET") {
+		}
+
+		"/api/users/login"(controller: "user", action: "login", method: "POST") {
+		}
+
+		"/api/users/$userId"(controller: "user", action: "showUser", method: "GET") {
+		}
+		"/api/users/update/$userId"(controller: "user", action: "updateUser", method: "PUT") {
+		}
+		"/api/users/delete/$userId"(controller: "user", action: "deleteUser", method: "DELETE") {
+		}
+
+		"/api/parkingSlots"(controller: "parkingSlot", action: "create", method: "POST") {
+		}
+		
+		"/api/parkingSlots"(controller: "parkingSlot", action: "listParkingSlots", method: "GET") {
+		}
+		
+		"/api/parkingSlots/$id"(controller: "parkingSlot", action: "showParkingSlot", method: "GET") {
+		}
+		"/api/parkingSlots/delete/$id"(controller: "parkingSlot", action: "deleteParkingSlot", method: "DELETE") {
+		}
+		"/api/parkingSlots/updateSlot/$id"(controller: "parkingSlot", action: "updateParkingSlot", method: "PUT") {
+		}
+
+		"/api/booking/step1"(controller: "booking", action: "step1", method: "POST") {
+		}
+
+		"/api/booking/step2"(controller: "booking", action: "step2", method: "POST") {
+		}
+
+		"/api/booking/extendEndTime"(controller: "booking", action: "extendEndTime", method: "POST") {
+		}
+
+		"/api/booking"(controller: "booking", action: "bookingList", method: "GET") {
+		}
+
+		"/api/booking/$id?"(controller: "booking", action: "showBooking", method: "GET") {
+		}
+
+		"/api/booking/delete/$id"(controller: "booking", action: "deleteBooking", method: "DELETE") {
+		}
+
+		"/$controller/$action?/$id?" {
+			constraints {
+				// apply constraints here
+			}
+		}
+
+		"/"(view: "/index")
+		"500"(view: '/error')
+	}
+		
+}
+
+-------------------------------------------------------------------------------------------------------------------------------
