@@ -21,7 +21,12 @@ class ParkingSlotController {
 				def responseBody = [
 					status: 'success',
 					message: 'Parking slot created successfully.',
-					data: parkingSlot
+					data:[
+						 id: parkingSlot.id,
+						 slotName:parkingSlot.slotName,
+						 slotCategory:parkingSlot.slotCategory,
+						 typeOfSlot:parkingSlot.typeOfSlot
+						 ]
 				]
 				render status: 201, contentType: 'application/json', text: responseBody as JSON
 			} else {
@@ -183,7 +188,11 @@ class ParkingSlotController {
 				def responseBody = [
 					status: 'success',
 					message: 'Parking slot status updated successfully.',
-					data: result.data
+					data: [
+						id: result.data.id,
+						slotName:result.data.slotName,
+						slotStatus:result.data.slotStatus,
+						]
 				]
 
 				render status: 200, contentType: 'application/json', text: responseBody as JSON

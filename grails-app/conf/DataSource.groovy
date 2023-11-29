@@ -21,13 +21,13 @@ environments {
 	test {
 		dataSource {
 			dbCreate = "update"
-			url = "jdbc:mysql://localhost:3306/parkingmanagement1"
+			url = "jdbc:mysql://localhost:3306/parkingmanagement"
 		}
 	}
 	production {
 		dataSource {
 			dbCreate = "update"
-			url = "jdbc:mysql://localhost:3306/parkingmanagement1"
+			url = "jdbc:mysql://localhost:3306/parkingmanagement"
 			pooled = true
 			properties {
 			   maxActive = -1

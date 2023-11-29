@@ -21,7 +21,14 @@ class UserController {
 					def responseBody = [
 						status: 'success',
 						message: 'User registered successfully.',
-						data: result.data
+						data: [
+							 	userId: result.data.id,
+								userName: result.data.userName,
+								firstName: result.data.firstName,
+							    lastName: result.data.lastName,
+								phoneCountryCode: result.data.phoneCountryCode,
+								phoneNumber: result.data.phoneNumber,
+							]
 					]
 	
 					render status: 201, contentType: 'application/json', text: responseBody as JSON
@@ -65,11 +72,11 @@ class UserController {
 					def responseBody = [
 						status: 'success',
 						message: 'User authenticated successfully.',
-						data: [
-							userId: user.id,
-							userName: user.userName,
-							token: token
-						]
+//						data: [
+//							userId: user.id,
+//							userName: user.userName,
+//							token: token
+//						]
 					]
 	
 					// Respond with a success status (200) and JSON
@@ -109,7 +116,7 @@ class UserController {
 				// Iterate through the users and extract their details
 				users.each { user ->
 					def userDetail = [
-						userId: user.id,
+//						userId: user.id,
 						userName: user.userName,
 						firstName: user.firstName,
 						lastName: user.lastName,
@@ -150,7 +157,7 @@ class UserController {
 						status: 'success',
 						message: 'User retrieved successfully.',
 						data: [
-							userId: user.id,
+//							userId: user.id,
 							userName: user.userName,
 							firstName: user.firstName,
 							lastName: user.lastName,
@@ -194,7 +201,13 @@ class UserController {
 					def responseBody = [
 						status: 'success',
 						message: 'User updated successfully',
-						data: result.data
+						data :[
+							userName: result.data.userName,
+							firstName: result.data.firstName,
+							lastName: result.data.lastName,
+							phoneCountryCode: result.data.phoneCountryCode,
+							phoneNumber: result.data.phoneNumber,
+							]
 					]
 	
 					render status: 200, contentType: 'application/json', text: responseBody as JSON
@@ -232,7 +245,10 @@ class UserController {
 					def responseBody = [
 						status: 'success',
 						message: 'User deleted successfully',
-						data: user
+						data: [
+							userId: user.id,
+						   userName: user.userName,
+						   ]
 					]
 					// Respond with a 200 OK status and JSON content type
 					render status: 200, contentType: 'application/json', text: responseBody as JSON

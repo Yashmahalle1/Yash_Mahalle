@@ -25,6 +25,8 @@ grails.project.dependency.resolution = {
         mavenLocal()
         mavenCentral()
 		
+		
+		
 
         // uncomment these (or add new ones) to enable remote dependency resolution from public Maven repositories
         //mavenRepo "http://snapshots.repository.codehaus.org"
@@ -39,9 +41,7 @@ grails.project.dependency.resolution = {
 		runtime 'mysql:mysql-connector-java:5.1.20'
 		//compile "org.grails.plugins:quartz:2.0.13"
 		//runtime 'org.liquibase:liquibase-core:4.8.0' 
-		
-
-		
+		//runtime 'org.quartz-scheduler:quartz:1.8.6'	
     }
 
     plugins {

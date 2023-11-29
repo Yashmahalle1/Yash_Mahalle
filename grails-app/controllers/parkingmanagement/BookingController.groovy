@@ -22,9 +22,14 @@ class BookingController {
 				def responseBody = [
 					status: 'success',
 					message: 'Booking step 1 successful.',
-					data: result.data
+					data: [
+					    bookingId:result.data.id,
+						startTime: result.data.startTime,
+						endTime: result.data.endTime,
+						status: result.data.status,
+						vehiclePlateNumber : result.data.vehiclePlateNumber
+						]
 				]
-
 				render status: 200, contentType: 'application/json', text: responseBody as JSON
 			} else {
 				// Booking step 1 failed, construct an error response with details
@@ -101,7 +106,9 @@ class BookingController {
                         text: [
                             status: 'success',
                             message: 'Booking step 2: Slot allocated.',
-                            data: allocatedSlot.slotName
+                            data:[
+								 slotName: allocatedSlot.slotName
+								 ]
                         ] as JSON
                 } else {
                     render status: 500, contentType: 'application/json',
